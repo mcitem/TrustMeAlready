@@ -1,53 +1,53 @@
-package com.virb3.trustmealready;
+package io.github.trustmealready;
+
+import android.annotation.SuppressLint;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
-import de.robv.android.xposed.IXposedHookZygoteInit;
-import de.robv.android.xposed.XC_MethodReplacement;
-import de.robv.android.xposed.XposedBridge;
+import io.github.libxposed.api.XposedModule;
 
-import static de.robv.android.xposed.XposedHelpers.*;
+public class Main extends XposedModule {
 
-public class Main implements IXposedHookZygoteInit {
-
+    private static final String TAG = "TrustMeAlready";
     private static final String SSL_CLASS_NAME = "com.android.org.conscrypt.TrustManagerImpl";
     private static final String SSL_METHOD_NAME = "checkTrustedRecursive";
     private static final Class<?> SSL_RETURN_TYPE = List.class;
     private static final Class<?> SSL_RETURN_PARAM_TYPE = X509Certificate.class;
 
     @Override
-    public void initZygote(StartupParam startupParam) throws Throwable {
-        XposedBridge.log("TrustMeAlready loading...");
+    @SuppressLint("PrivateApi")
+    public void onModuleLoaded(@NonNull ModuleLoadedParam param) {
+        log(Log.INFO, TAG, "TrustMeAlready loading in process: " + param.getProcessName());
         int hookedMethods = 0;
 
-        for (Method method : findClass(SSL_CLASS_NAME, null).getDeclaredMethods()) {
+        Class<?> trustManagerClass;
+        try {
+            trustManagerClass = Class.forName(SSL_CLASS_NAME, false, null);
+        } catch (ClassNotFoundException e) {
+            log(Log.ERROR, TAG, "Failed to find class: " + SSL_CLASS_NAME, e);
+            return;
+        }
+
+        for (Method method : trustManagerClass.getDeclaredMethods()) {
             if (!checkSSLMethod(method)) {
                 continue;
             }
 
-            List<Object> params = new ArrayList<>();
-            params.addAll(Arrays.asList(method.getParameterTypes()));
-            params.add(new XC_MethodReplacement() {
-                @Override
-                protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
-                    return new ArrayList<X509Certificate>();
-                }
-            });
-
-            XposedBridge.log("Hooking method:");
-            XposedBridge.log(method.toString());
-            findAndHookMethod(SSL_CLASS_NAME, null, SSL_METHOD_NAME, params.toArray());
+            log(Log.INFO, TAG, "Hooking method: " + method);
+            hook(method).intercept(chain -> new ArrayList<X509Certificate>());
             hookedMethods++;
         }
 
-        XposedBridge.log(String.format(Locale.ENGLISH, "TrustMeAlready loaded! Hooked %d methods", hookedMethods));
+        log(Log.INFO, TAG, String.format(Locale.ENGLISH, "TrustMeAlready loaded! Hooked %d methods", hookedMethods));
     }
 
     private boolean checkSSLMethod(Method method) {
